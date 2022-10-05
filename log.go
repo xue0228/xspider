@@ -78,7 +78,7 @@ func InitLog(logPath, errPath string, logLevel zapcore.Level) *zap.SugaredLogger
 func getWriter(filename string) io.Writer {
 	return &lumberjack.Logger{
 		Filename:   filename,
-		MaxSize:    10,    //最大M数，超过则切割
+		MaxSize:    2,     //最大M数，超过则切割
 		MaxBackups: 0,     //最大文件保留数，超过就删除最老的日志文件
 		MaxAge:     0,     //保存最大天数
 		Compress:   false, //是否压缩
