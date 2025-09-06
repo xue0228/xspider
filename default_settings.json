@@ -1,0 +1,60 @@
+{
+  "BOT_NAME": "xbot",
+  "LOG_ENABLED": true,
+  "LOG_LEVEL": "debug",
+  "LOG_FILE": "",
+  "LOG_ERR_FILE": "",
+  "STATS_STRUCT": "StatserImpl",
+  "SIGNAL_MANAGER_STRUCT": "SignalManagerImpl",
+  "SCHEDULER_STRUCT": "SchedulerImpl",
+  "DOWNLOADER_STRUCT": "DownloaderImpl",
+  "SPIDER_MIDDLEWARE_MANAGER_STRUCT": "SpiderMiddlewareManagerImpl",
+  "DOWNLOADER_MIDDLEWARE_MANAGER_STRUCT": "DownloaderMiddlewareManagerImpl",
+  "ITEM_PIPELINE_MANAGER_STRUCT": "ItemPipelineManagerImpl",
+  "EXTENSION_MANAGER_STRUCT": "ExtensionManagerImpl",
+  "ENGINE_STRUCT": "EnginerImpl",
+  "RESPONSE_SLOT_STRUCT": "ResponseSlotImpl",
+  "ITEM_SLOT_STRUCT": "ItemSlotImpl",
+  "REQUEST_SLOT_STRUCT": "RequestSlotImpl",
+  "SPIDER_MIDDLEWARES_BASE": {
+    "HttpErrorSpiderMiddleware": 50,
+    "UrlLengthSpiderMiddleware": 800,
+    "DepthSpiderMiddleware": 850,
+    "StartSpiderMiddleware": 900,
+    "AllowedDomainSpiderMiddleware": 950
+  },
+  "SPIDER_MIDDLEWARES": {},
+  "DOWNLOADER_MIDDLEWARES_BASE": {
+    "HttpAuthDownloaderMiddleware": 300,
+    "DownloadTimeoutDownloaderMiddleware": 350,
+    "DefaultHeadersDownloaderMiddleware": 400,
+    "UserAgentDownloaderMiddleware": 500,
+    "RetryDownloaderMiddleware": 550,
+    "DownloaderStatsDownloaderMiddleware": 850
+  },
+  "DOWNLOADER_MIDDLEWARES": {},
+  "ITEM_PIPELINES": {},
+  "EXTENSIONS_BASE": {
+    "CoreStatsExtension": 50,
+    "LogStatsExtension": 500
+  },
+  "EXTENSIONS": {},
+  "DUPE_FILTER_ENABLED": true,
+  "DUPE_FILTER_STRUCT": "DupeFilterImpl",
+  "PRIORITY_QUEUE_STRUCT": "LIFOPriorityQueue",
+  "SIGNAL_VERBOSE_STATS": false,
+  "DOWNLOAD_MAXSIZE": 1073741824,
+  "CONCURRENT_ITEMS": 100,
+  "CONCURRENT_REQUESTS": 16,
+  "MAX_REQUEST_QUEUE_SIZE_PER_DOMAIN": 16,
+  "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+  "DOWNLOAD_DELAY": 1,
+  "RANDOMIZE_DOWNLOAD_DELAY": true,
+  "REQUEST_SLOTS": {
+    "example_domain": {
+      "concurrency": 1,
+      "delay": 1,
+      "randomize_delay": true
+    }
+  }
+}
