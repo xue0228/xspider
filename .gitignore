@@ -25,3 +25,5 @@ drawio/
 test/
 
 *_test.go
+
+*.db
