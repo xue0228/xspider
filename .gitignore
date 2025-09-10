@@ -22,5 +22,6 @@ go.work
 
 .idea/
 drawio/
+test/
 
 *_test.go

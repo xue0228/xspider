@@ -8,13 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"xspider/container"
+
+	"github.com/xue0228/xspider/container"
 )
 
 type Response struct {
 	StatusCode int
 	Body       []byte
-	Ctx        container.Dict
+	Ctx        container.JsonMap
 	Request    *Request
 	Headers    *http.Header
 }

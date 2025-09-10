@@ -74,6 +74,10 @@ func getWriter(filename string) io.Writer {
 }
 
 func RequestLogger(log *zap.SugaredLogger, request *Request) *zap.SugaredLogger {
+	if request == nil {
+		return log
+	}
+
 	return log.With(
 		"url", request.Url.String(),
 		"method", request.Method,
@@ -85,6 +89,9 @@ func RequestLogger(log *zap.SugaredLogger, request *Request) *zap.SugaredLogger 
 }
 
 func ResponseLogger(log *zap.SugaredLogger, response *Response) *zap.SugaredLogger {
+	if response == nil {
+		return log
+	}
 	return RequestLogger(log, response.Request).With(
 		"status_code", response.StatusCode,
 		"content_length", len(response.Body))

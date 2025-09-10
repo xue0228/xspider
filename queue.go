@@ -103,7 +103,7 @@ func (q *FIFOPriorityQueue) FromSpider(spider *Spider) {
 
 	q.queue = priorityqueue.NewWith(compare)
 	q.counter = 0
-	q.Logger.Info("FIFO 优先级队列已初始化")
+	q.Logger.Info("模块初始化完成")
 }
 
 // LIFOPriorityQueue 优先级相同时 LIFO
@@ -139,5 +139,5 @@ func (q *LIFOPriorityQueue) FromSpider(spider *Spider) {
 
 	q.queue = priorityqueue.NewWith(compare)
 	q.counter = 0
-	q.Logger.Info("LIFO 优先级队列已初始化")
+	q.Logger.Info("模块初始化完成")
 }

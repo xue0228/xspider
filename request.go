@@ -9,8 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"xspider/container"
-	"xspider/encoder"
+
+	"github.com/xue0228/xspider/container"
+	"github.com/xue0228/xspider/encoder"
 )
 
 type Request struct {
@@ -22,7 +23,7 @@ type Request struct {
 	Encoding   string
 	Priority   int
 	DontFilter bool
-	Ctx        container.Dict
+	Ctx        container.JsonMap
 	// 请求抛出错误时的回调函数，错误包括404、请求超时等
 	Errback string
 	// request请求下载完成后处理其response的回调函数
@@ -96,15 +97,12 @@ func (r *Request) Fingerprint(includeHeaders []string, keepFragments bool) strin
 		u.Fragment = ""
 	}
 	body := ReadRequestBody(r)
-	request, err := NewRequest(
+	request := NewRequest(
 		u.String(),
 		WithHeaders(*header),
 		WithBody(bytes.NewBuffer(body)),
 		WithMethod(r.Method))
-	if err != nil {
-		panic(err)
-	}
-	req, err := request.ToDict().Dumps()
+	req, err := request.ToJsonMap().Dumps()
 	if err != nil {
 		panic(err)
 	}
@@ -127,93 +125,115 @@ func getDomain(u *url.URL) string {
 }
 
 func (r *Request) Domain() string {
-	if d, ok := r.Ctx.GetString("domain"); ok {
+	if d, err := container.Get[string](r.Ctx, "domain"); err != nil {
 		return d
 	} else {
 		d := getDomain(r.Url)
-		r.Ctx.Set("domain", d)
+		container.Set(r.Ctx, "domain", d)
 		return d
 	}
 }
 
-func (r *Request) ToDict() container.Dict {
-	d := container.NewSyncDict()
+func (r *Request) ToRequestTable() *RequestTable {
+	var u, method, body string
+	if r.Url != nil {
+		u = r.Url.String()
+	} else {
+		u = ""
+	}
+	method = r.Method
+	if r.Body != nil {
+		data := ReadRequestBody(r)
+		body = base64.StdEncoding.EncodeToString(data)
+	} else {
+		body = ""
+	}
+	return &RequestTable{
+		Body:   body,
+		Method: method,
+		Url:    u,
+		Fp:     r.Fingerprint(nil, false),
+	}
+}
+
+func (r *Request) ToJsonMap() container.JsonMap {
+	d := container.NewSyncJsonMap()
 
 	if r.Url != nil {
-		d.Set("url", r.Url.String())
+		container.Set(d, "url", r.Url.String())
 	} else {
-		d.Set("url", "")
+		container.Set(d, "url", "")
 	}
 
-	headerDict := container.NewSyncDict()
+	headerDict := make(map[string][]string)
 	if r.Headers != nil {
 		for k, v := range *r.Headers {
-			headerDict.Set(k, v)
+			headerDict[k] = v
 		}
 	}
-	d.Set("headers", headerDict)
+	container.Set(d, "headers", headerDict)
 
 	if r.Body != nil {
 		data := ReadRequestBody(r)
 		body := base64.StdEncoding.EncodeToString(data)
-		d.Set("body", body)
+		container.Set(d, "body", body)
 	} else {
-		d.Set("body", "")
+		container.Set(d, "body", "")
 	}
 
 	if r.Cookies != nil {
 		cookies := CookiesToString(r.Cookies)
-		d.Set("cookies", cookies)
+		container.Set(d, "cookies", cookies)
 	} else {
-		d.Set("cookies", "")
+		container.Set(d, "cookies", "")
 	}
 
-	ctx := container.NewSyncDict()
+	var ctx map[string]any
 	if r.Ctx != nil {
-		ctx = r.Ctx
+		ctx = r.Ctx.GetMap()
 	}
-	d.Set("ctx", ctx)
+	container.Set(d, "ctx", ctx)
 
-	d.Set("method", r.Method)
-	d.Set("encoding", r.Encoding)
-	d.Set("priority", r.Priority)
-	d.Set("dont_filter", r.DontFilter)
-	d.Set("errback", r.Errback)
-	d.Set("callback", r.Callback)
+	container.Set(d, "method", r.Method)
+	container.Set(d, "encoding", r.Encoding)
+	container.Set(d, "priority", r.Priority)
+	container.Set(d, "dont_filter", r.DontFilter)
+	container.Set(d, "errback", r.Errback)
+	container.Set(d, "callback", r.Callback)
 
 	return d
 }
 
-func NewRequestFromDict(d container.Dict) *Request {
-	method, ok := d.GetString("method")
-	if !ok {
-		panic("method is required")
+func NewRequestFromJsonMap(d container.JsonMap) *Request {
+	method, err := container.Get[string](d, "method")
+	if err != nil {
+		panic(err)
 	}
-	encoding, ok := d.GetString("encoding")
-	if !ok {
-		panic("encoding is required")
+	encoding, err := container.Get[string](d, "encoding")
+	if err != nil {
+		panic(err)
 	}
-	priority, ok := d.GetInt("priority")
-	if !ok {
-		panic("priority is required")
+	priority, err := container.Get[int](d, "priority")
+	if err != nil {
+		panic(err)
 	}
-	dontFilter, ok := d.GetBool("dont_filter")
-	if !ok {
-		panic("dont_filter is required")
+	dontFilter, err := container.Get[bool](d, "dont_filter")
+	if err != nil {
+		panic(err)
 	}
-	errback, ok := d.GetString("errback")
-	if !ok {
-		panic("errback is required")
+	errback, err := container.Get[string](d, "errback")
+	if err != nil {
+		panic(err)
 	}
-	callback, ok := d.GetString("callback")
-	if !ok {
-		panic("callback is required")
+	callback, err := container.Get[string](d, "callback")
+	if err != nil {
+		panic(err)
 	}
 
 	var ur *url.URL
-	urlStr, ok := d.GetString("url")
-	if !ok {
-		panic("url is required")
+	urlStr, err := container.Get[string](d, "url")
+	if err != nil {
+		panic(err)
 	} else {
 		u, err := url.Parse(urlStr)
 		if err != nil {
@@ -222,29 +242,20 @@ func NewRequestFromDict(d container.Dict) *Request {
 		ur = u
 	}
 
-	h, ok := d.Get("headers")
-	if !ok {
-		panic("headers is required")
-	}
-	headerDict, ok := h.(container.Dict)
-	if !ok {
-		panic("headers is not a Dict")
+	headerDict, err := container.Get[map[string][]string](d, "headers")
+	if err != nil {
+		panic(err)
 	}
 	header := &http.Header{}
-	for _, key := range headerDict.Keys() {
-		v, _ := headerDict.Get(key)
-		value, ok := v.([]string)
-		if !ok {
-			panic("header's value is not a []string")
-		}
+	for key, value := range headerDict {
 		for _, s := range value {
 			header.Add(key, s)
 		}
 	}
 
-	body, ok := d.GetString("body")
-	if !ok {
-		panic("body is required")
+	body, err := container.Get[string](d, "body")
+	if err != nil {
+		panic(err)
 	}
 	data, err := base64.StdEncoding.DecodeString(body)
 	if err != nil {
@@ -252,9 +263,9 @@ func NewRequestFromDict(d container.Dict) *Request {
 	}
 	reader := bytes.NewBuffer(data)
 
-	cookiesStr, ok := d.GetString("cookies")
-	if !ok {
-		panic("cookies is required")
+	cookiesStr, err := container.Get[string](d, "cookies")
+	if err != nil {
+		panic(err)
 	}
 	var cookies []*http.Cookie
 	if cookiesStr == "" {
@@ -266,13 +277,14 @@ func NewRequestFromDict(d container.Dict) *Request {
 		}
 	}
 
-	context, ok := d.Get("ctx")
-	if !ok {
-		panic("ctx is required")
+	context, err := container.Get[map[string]any](d, "ctx")
+	if err != nil {
+		panic(err)
 	}
-	ctx, ok := context.(container.Dict)
-	if !ok {
-		panic("ctx is not a Dict")
+	ctx := container.NewSyncJsonMap()
+	err = ctx.SetMap(context)
+	if err != nil {
+		panic(err)
 	}
 
 	return &Request{
@@ -353,14 +365,20 @@ func WithCallback(callback string) RequestOption {
 	}
 }
 
+func WithCtx(ctx container.JsonMap) RequestOption {
+	return func(r *Request) {
+		r.Ctx = ctx
+	}
+}
+
 // RequestOption 是用于配置Request的函数类型
 type RequestOption func(*Request)
 
 // NewRequest 创建一个新的Request，只需要URL，其他参数通过可变参数设置
-func NewRequest(URL string, opts ...RequestOption) (*Request, error) {
+func NewRequest(URL string, opts ...RequestOption) *Request {
 	u, err := url.Parse(URL)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
 	// 创建默认Request
@@ -373,7 +391,7 @@ func NewRequest(URL string, opts ...RequestOption) (*Request, error) {
 		Encoding:   "utf-8",
 		Priority:   0,
 		DontFilter: false,
-		Ctx:        container.NewSyncDict(),
+		Ctx:        container.NewSyncJsonMap(),
 		Errback:    "",
 		Callback:   "",
 	}
@@ -383,5 +401,5 @@ func NewRequest(URL string, opts ...RequestOption) (*Request, error) {
 		opt(request)
 	}
 
-	return request, nil
+	return request
 }

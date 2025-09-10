@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/xue0228/xspider/container"
 )
 
 func init() {
@@ -20,19 +22,20 @@ func (d *DownloaderImpl) Name() string {
 
 func (d *DownloaderImpl) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&d.BaseSpiderModule, spider, d.Name())
-	d.Logger.Info("下载器已初始化")
+	d.Logger.Info("模块初始化完成")
 }
 
 func (d *DownloaderImpl) Fetch(request *Request, spider *Spider) (*Response, error) {
 	//创建网络请求客户端
 	client := &http.Client{
 		//超时
-		Timeout: time.Duration(request.Ctx.GetIntWithDefault("download_timeout", 180)) * time.Second,
+		Timeout: time.Duration(container.GetWithDefault[int](request.Ctx, "download_timeout", 180)) * time.Second,
 		//重定向
 		//CheckRedirect: NewCheckRedirect(r),
 	}
 	//添加代理
-	proxy := request.Ctx.GetStringWithDefault("proxy", "")
+	//proxy := request.Ctx.GetStringWithDefault("proxy", "")
+	proxy := container.GetWithDefault(request.Ctx, "proxy", "")
 	if proxy != "" {
 		proxyUrl, err := url.Parse(proxy)
 		if err != nil {

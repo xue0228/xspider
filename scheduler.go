@@ -2,6 +2,7 @@ package xspider
 
 import (
 	"github.com/emirpasic/gods/sets/hashset"
+	"github.com/xue0228/xspider/container"
 )
 
 func init() {
@@ -17,7 +18,7 @@ type DupeFilterImpl struct {
 func (d *DupeFilterImpl) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&d.BaseSpiderModule, spider, d.Name())
 	d.fingerprints = hashset.New()
-	d.Logger.Info("去重过滤器已初始化")
+	d.Logger.Info("模块初始化完成")
 }
 
 func (d *DupeFilterImpl) Name() string {
@@ -52,17 +53,20 @@ type SchedulerImpl struct {
 func (s *SchedulerImpl) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&s.BaseSpiderModule, spider, s.Name())
 
-	s.filterEnabled = spider.Settings.GetBoolWithDefault("DUPE_FILTER_ENABLED", true)
+	//s.filterEnabled = spider.Settings.GetBoolWithDefault("DUPE_FILTER_ENABLED", true)
+	s.filterEnabled = container.GetWithDefault[bool](spider.Settings, "DUPE_FILTER_ENABLED", true)
 
-	dfStr := spider.Settings.GetStringWithDefault("DUPE_FILTER_STRUCT", "DupeFilterImpl")
+	//dfStr := spider.Settings.GetStringWithDefault("DUPE_FILTER_STRUCT", "DupeFilterImpl")
+	dfStr := container.GetWithDefault[string](spider.Settings, "DUPE_FILTER_STRUCT", "DupeFilterImpl")
 	s.df = GetAndAssertComponent[DupeFilter](dfStr)
 	s.df.FromSpider(spider)
 
-	pqStr := spider.Settings.GetStringWithDefault("PRIORITY_QUEUE_STRUCT", "LIFOPriorityQueue")
+	//pqStr := spider.Settings.GetStringWithDefault("PRIORITY_QUEUE_STRUCT", "LIFOPriorityQueue")
+	pqStr := container.GetWithDefault[string](spider.Settings, "PRIORITY_QUEUE_STRUCT", "LIFOPriorityQueue")
 	s.pq = GetAndAssertComponent[PriorityQueuer](pqStr)
 	s.pq.FromSpider(spider)
 
-	s.Logger.Info("调度器已初始化")
+	s.Logger.Info("模块初始化完成")
 }
 
 func (s *SchedulerImpl) Name() string {

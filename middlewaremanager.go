@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"xspider/container"
+
+	"github.com/xue0228/xspider/container"
 )
 
 func init() {
@@ -89,40 +90,11 @@ func NewMiddlewareManager[T any](middlewares map[string]int) (*MiddlewareManager
 }
 
 func creatManager[T any](settingName string, baseSetting map[string]int, spider *Spider) (*MiddlewareManager[T], []int) {
-	base := spider.Settings.GetWithDefault(fmt.Sprintf("%s_BASE", settingName), baseSetting)
+	//base := spider.Settings.GetWithDefault(fmt.Sprintf("%s_BASE", settingName), baseSetting)
+	baseMap := container.GetWithDefault[map[string]int](spider.Settings, fmt.Sprintf("%s_BASE", settingName), baseSetting)
 
-	baseMap := make(map[string]int)
-	switch b := base.(type) {
-	case map[string]int:
-		baseMap = b
-	case container.Dict:
-		for _, key := range b.Keys() {
-			if v, ok := b.GetInt(key); ok {
-				baseMap[key] = v
-			} else {
-				panic(fmt.Errorf("%s_BASE is not a map[string]int or Dict", settingName))
-			}
-		}
-	default:
-		panic(fmt.Errorf("%s_BASE is not a map[string]int or Dict", settingName))
-	}
-
-	custom := spider.Settings.GetWithDefault(settingName, map[string]int{})
-	customMap := make(map[string]int)
-	switch c := custom.(type) {
-	case map[string]int:
-		customMap = c
-	case container.Dict:
-		for _, key := range c.Keys() {
-			if v, ok := c.GetInt(key); ok {
-				customMap[key] = v
-			} else {
-				panic(fmt.Errorf("%s is not a map[string]int or Dict", settingName))
-			}
-		}
-	default:
-		panic(fmt.Errorf("%s is not a map[string]int or Dict", settingName))
-	}
+	//custom := spider.Settings.GetWithDefault(settingName, map[string]int{})
+	customMap := container.GetWithDefault[map[string]int](spider.Settings, settingName, map[string]int{})
 
 	for k, v := range customMap {
 		baseMap[k] = v
@@ -149,7 +121,7 @@ func (sm *SpiderMiddlewareManagerImpl) FromSpider(spider *Spider) {
 	for _, mw := range sm.mm.Middlewares {
 		mw.FromSpider(spider)
 	}
-	sm.Logger.Info("爬虫中间件管理器已初始化")
+	sm.Logger.Info("模块初始化完成")
 }
 
 func (sm *SpiderMiddlewareManagerImpl) Middlewares() []SpiderMiddlewarer {
@@ -290,7 +262,7 @@ func (dm *DownloaderMiddlewareManagerImpl) FromSpider(spider *Spider) {
 	for _, mw := range dm.mm.Middlewares {
 		mw.FromSpider(spider)
 	}
-	dm.Logger.Info("下载器中间件管理器已初始化")
+	dm.Logger.Info("模块初始化完成")
 }
 
 func (dm *DownloaderMiddlewareManagerImpl) Middlewares() []DownloaderMiddlewarer {
@@ -411,7 +383,7 @@ func (ipm *ItemPipelineManagerImpl) FromSpider(spider *Spider) {
 	for _, mw := range ipm.mm.Middlewares {
 		mw.FromSpider(spider)
 	}
-	ipm.Logger.Info("ItemPipeline管理器已初始化")
+	ipm.Logger.Info("模块初始化完成")
 }
 
 func (ipm *ItemPipelineManagerImpl) ItemPipelines() []ItemPipeliner {
@@ -429,7 +401,7 @@ func (ipm *ItemPipelineManagerImpl) Close(spider *Spider) {
 	ipm.BaseSpiderModule.Close(spider)
 }
 
-func (ipm *ItemPipelineManagerImpl) ProcessItem(item Item, spider *Spider) (it Item, idx int, err error) {
+func (ipm *ItemPipelineManagerImpl) ProcessItem(item Item, response *Response, spider *Spider) (it Item, idx int, err error) {
 	idx = 0
 
 	if ipm.Len() == 0 {
@@ -449,7 +421,7 @@ func (ipm *ItemPipelineManagerImpl) ProcessItem(item Item, spider *Spider) (it I
 
 	for i := idx; i < ipm.Len(); i++ {
 		idx = i
-		it = ipm.ItemPipelines()[i].ProcessItem(item, spider)
+		it = ipm.ItemPipelines()[i].ProcessItem(item, response, spider)
 		if it == nil {
 			return nil, idx, nil
 		} else {
@@ -472,7 +444,7 @@ func (em *ExtensionManagerImpl) FromSpider(spider *Spider) {
 		mw.FromSpider(spider)
 		mw.ConnectSignal(spider.Signal, idxs[i])
 	}
-	em.Logger.Info("扩展管理器已初始化")
+	em.Logger.Info("模块初始化完成")
 }
 
 func (em *ExtensionManagerImpl) Name() string {

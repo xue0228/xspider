@@ -79,7 +79,7 @@ type DownloaderMiddlewarer interface {
 // ItemPipeliner 爬虫结果处理中间件
 type ItemPipeliner interface {
 	SpiderModuler
-	ProcessItem(Item, *Spider) Item
+	ProcessItem(Item, *Response, *Spider) Item
 }
 
 // SpiderMiddlewareManager 爬虫中间件管理
@@ -108,7 +108,7 @@ type ItemPipelineManager interface {
 	SpiderModuler
 	Len() int
 	ItemPipelines() []ItemPipeliner
-	ProcessItem(Item, *Spider) (Item, int, error)
+	ProcessItem(Item, *Response, *Spider) (Item, int, error)
 }
 
 // ExtensionManager 爬虫扩展管理

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/xue0228/xspider/container"
 	"go.uber.org/zap"
 )
 
@@ -39,7 +40,34 @@ type EnginerImpl struct {
 	responseSlot ResponseSloter
 	requestSlot  RequestSloter
 
+	backTask int
+
 	wg sync.WaitGroup
+}
+
+func (eg *EnginerImpl) Add(num int) {
+	eg.backTask += num
+}
+
+func (eg *EnginerImpl) Done() {
+	eg.backTask--
+}
+
+func (eg *EnginerImpl) IsAllDone() bool {
+	return eg.backTask <= 0
+}
+
+func (eg *EnginerImpl) emit(signal Signaler) {
+	go func() {
+		eg.Add(1)
+		eg.wg.Add(1)
+		defer func() {
+			eg.Done()
+			eg.wg.Done()
+		}()
+
+		eg.signal.Emit(signal)
+	}()
 }
 
 func (eg *EnginerImpl) Name() string {
@@ -61,18 +89,21 @@ func (eg *EnginerImpl) FromSpider(spider *Spider) {
 	signal.Notify(eg.osChan, os.Interrupt, syscall.SIGTERM)
 
 	// 初始化缓存调度组件
-	responseSlotStr := spider.Settings.GetStringWithDefault("RESPONSE_SLOT_STRUCT", "ResponseSlotImpl")
+	//responseSlotStr := spider.Settings.GetStringWithDefault("RESPONSE_SLOT_STRUCT", "ResponseSlotImpl")
+	responseSlotStr := container.GetWithDefault[string](spider.Settings, "RESPONSE_SLOT_STRUCT", "ResponseSlotImpl")
 	eg.responseSlot = GetAndAssertComponent[ResponseSloter](responseSlotStr)
 	eg.responseSlot.FromSpider(spider)
-	itemSLotStr := spider.Settings.GetStringWithDefault("ITEM_SLOT_STRUCT", "ItemSlotImpl")
+	//itemSLotStr := spider.Settings.GetStringWithDefault("ITEM_SLOT_STRUCT", "ItemSlotImpl")
+	itemSLotStr := container.GetWithDefault[string](spider.Settings, "ITEM_SLOT_STRUCT", "ItemSlotImpl")
 	eg.itemSlot = GetAndAssertComponent[ItemSloter](itemSLotStr)
 	eg.itemSlot.FromSpider(spider)
-	requestSlotStr := spider.Settings.GetStringWithDefault("REQUEST_SLOT_STRUCT", "RequestSlotImpl")
+	//requestSlotStr := spider.Settings.GetStringWithDefault("REQUEST_SLOT_STRUCT", "RequestSlotImpl")
+	requestSlotStr := container.GetWithDefault[string](spider.Settings, "REQUEST_SLOT_STRUCT", "RequestSlotImpl")
 	eg.requestSlot = GetAndAssertComponent[RequestSloter](requestSlotStr)
 	eg.requestSlot.FromSpider(spider)
 
 	// 注册信号的回调函数
-	eg.signal.Connect(eg.spiderOpened, StSpiderOpened, 0)
+	eg.signal.Connect(eg.spiderOpened, StSpiderOpened, 50)
 	eg.signal.Connect(eg.startsLeftSpider, StStartsLeftSpider, 500)
 	eg.signal.Connect(eg.startsLeftSpiderMiddleware, StStartsLeftSpiderMiddleware, 500)
 	eg.signal.Connect(eg.requestLeftEngine, StRequestLeftEngine, 500)
@@ -90,9 +121,9 @@ func (eg *EnginerImpl) FromSpider(spider *Spider) {
 	eg.signal.Connect(eg.downloaderError, StDownloaderError, 500)
 	eg.signal.Connect(eg.requestErrback, StRequestErrback, 500)
 	eg.signal.Connect(eg.spiderIdle, StSpiderIdle, 500)
-	eg.signal.Connect(eg.spiderClosed, StSpiderClosed, 1000)
+	eg.signal.Connect(eg.spiderClosed, StSpiderClosed, 950)
 
-	eg.Logger.Info("引擎已初始化")
+	eg.Logger.Info("模块初始化完成")
 }
 
 func (eg *EnginerImpl) Start(spider *Spider) {
@@ -111,7 +142,7 @@ func (eg *EnginerImpl) Start(spider *Spider) {
 		defer eg.wg.Done()
 		eg.processDownloader(spider)
 	}()
-	eg.signal.Emit(NewSpiderOpenedSignal(SenderEngine, spider))
+	eg.emit(NewSpiderOpenedSignal(SenderEngine, spider))
 	eg.processScheduler(spider)
 	eg.wg.Wait()
 }
@@ -139,7 +170,7 @@ func (eg *EnginerImpl) processInterrupt(spider *Spider) {
 			} else {
 				// 第二次接收到信号，强制退出
 				eg.Logger.Info("再次接收到中断信号，强制退出", "signal", sig)
-				eg.signal.Emit(NewSpiderClosedSignal(SenderEngine, "interrupted", spider))
+				eg.emit(NewSpiderClosedSignal(SenderEngine, "interrupted", spider))
 			}
 		case <-eg.quit:
 			return
@@ -180,7 +211,7 @@ func (eg *EnginerImpl) processDownloader(spider *Spider) {
 			requests := eg.requestSlot.Pop()
 			idx := 0
 			for request := range requests {
-				eg.signal.Emit(NewRequestReachedDownloaderSignal(SenderDownloader, request, spider))
+				eg.emit(NewRequestReachedDownloaderSignal(SenderDownloader, request, spider))
 				idx++
 			}
 			if idx == 0 {
@@ -226,7 +257,8 @@ func (eg *EnginerImpl) isIdle(spider *Spider) bool {
 	return !spider.scheduler.HasPendingRequests() &&
 		eg.requestSlot.IsEmpty() &&
 		eg.itemSlot.IsEmpty() &&
-		spider.Signal.IsAllDone()
+		spider.Signal.IsAllDone() &&
+		eg.IsAllDone()
 }
 
 // 触发调度器
@@ -257,7 +289,7 @@ func (eg *EnginerImpl) triggerItem() {
 // 爬虫启动后发出Starts
 func (eg *EnginerImpl) spiderOpened(spider *Spider) {
 	eg.Logger.Info("爬虫引擎启动")
-	eg.signal.Emit(NewStartsLeftSpiderSignal(SenderEngine, spider.Starts, spider))
+	eg.emit(NewStartsLeftSpiderSignal(SenderEngine, spider.Starts, spider))
 }
 
 // 起始请求送往ProcessStartRequests处理
@@ -285,27 +317,37 @@ func (eg *EnginerImpl) startsLeftSpider(results Results, spider *Spider) {
 			fmt.Errorf("middleware %s returned nil", spider.spiderManager.Middlewares()[idx].Name()))
 	}
 
-	eg.signal.Emit(NewStartsLeftSpiderMiddlewareSignal(SenderProcessStartRequests, starts, spider))
+	eg.emit(NewStartsLeftSpiderMiddlewareSignal(SenderProcessStartRequests, starts, spider))
 }
 
 // 处理好的起始请求在Engine处分发，Request直接发往Scheduler，Item暂存Engine等待处理
 func (eg *EnginerImpl) startsLeftSpiderMiddleware(results Results, spider *Spider) {
 	eg.Logger.Debug("开始分发起始请求处理结果")
-	defer eg.Logger.Debug("结束分发起始请求处理结果")
 
-	for result := range results {
-		switch start := result.(type) {
-		case *Request:
-			eg.signal.Emit(NewRequestLeftEngineSignal(SenderProcessStartRequests, start, spider))
-		default:
-			item := &ItemResponseSignal{
-				Item:     start,
-				Response: nil,
-				Spider:   spider,
+	go func() {
+		defer eg.Logger.Debug("结束分发起始请求处理结果")
+
+		eg.Add(1)
+		eg.wg.Add(1)
+		defer func() {
+			eg.Done()
+			eg.wg.Done()
+		}()
+
+		for result := range results {
+			switch start := result.(type) {
+			case *Request:
+				eg.emit(NewRequestLeftEngineSignal(SenderProcessStartRequests, start, spider))
+			default:
+				item := &ItemResponseSignal{
+					Item:     start,
+					Response: nil,
+					Spider:   spider,
+				}
+				eg.itemSlot.Push(item)
 			}
-			eg.itemSlot.Push(item)
 		}
-	}
+	}()
 }
 
 // 新生成的请求送往Scheduler等候调度
@@ -332,23 +374,23 @@ func (eg *EnginerImpl) itemLeftEngine(item any, response *Response, spider *Spid
 		logger.Debug("结束处理Item")
 	}()
 
-	itemProcessed, idx, err := spider.itemManager.ProcessItem(item, spider)
+	itemProcessed, idx, err := spider.itemManager.ProcessItem(item, response, spider)
 	if err != nil {
 		if errors.Is(err, ErrDropItem) {
 			LogSpiderModulerError(
 				logger, zap.InfoLevel,
 				"ProcessItem方法出错",
 				spider.itemManager.ItemPipelines()[idx], err)
-			eg.signal.Emit(NewItemDroppedSignal(SenderItemPipeline, itemProcessed, response, err, spider))
+			eg.emit(NewItemDroppedSignal(SenderItemPipeline, itemProcessed, response, err, spider))
+			return
 		} else {
 			LogSpiderModulerError(
 				logger, zap.ErrorLevel,
 				"ProcessItem方法出错",
 				spider.itemManager.ItemPipelines()[idx], err)
-			eg.signal.Emit(NewItemErrorSignal(SenderItemPipeline, itemProcessed, response, err, spider))
+			eg.emit(NewItemErrorSignal(SenderItemPipeline, itemProcessed, response, err, spider))
+			return
 		}
-	} else {
-		eg.signal.Emit(NewItemScrapedSignal(SenderItemPipeline, itemProcessed, response, spider))
 	}
 
 	if itemProcessed == nil {
@@ -358,6 +400,8 @@ func (eg *EnginerImpl) itemLeftEngine(item any, response *Response, spider *Spid
 			spider.itemManager.ItemPipelines()[idx],
 			fmt.Errorf("middleware %s returned nil", spider.itemManager.ItemPipelines()[idx].Name()))
 	}
+
+	eg.emit(NewItemScrapedSignal(SenderItemPipeline, itemProcessed, response, spider))
 }
 
 // 离开Scheduler的请求Engine不做额外处理直接发往DownloaderMiddleware
@@ -366,7 +410,7 @@ func (eg *EnginerImpl) requestLeftScheduler(request *Request, spider *Spider) {
 	logger.Debug("开始分发请求到下载器中间件")
 	defer logger.Debug("结束分发请求到下载器中间件")
 
-	eg.signal.Emit(NewRequestReachedDownloaderMiddlewareSignal(SenderEngine, request, spider))
+	eg.emit(NewRequestReachedDownloaderMiddlewareSignal(SenderEngine, request, spider))
 }
 
 // 在请求进入下载器之前使用ProcessRequest处理
@@ -383,14 +427,14 @@ func (eg *EnginerImpl) requestReachedDownloaderMiddleware(request *Request, spid
 				logger, zap.InfoLevel,
 				"ProcessRequest方法出错",
 				spider.downloaderManager.Middlewares()[idx], err)
-			eg.signal.Emit(NewRequestDroppedSignal(SenderProcessRequest, request, err, spider))
+			eg.emit(NewRequestDroppedSignal(SenderProcessRequest, request, err, spider))
 		} else {
 			LogSpiderModulerError(
 				logger, zap.ErrorLevel,
 				"ProcessRequest方法出错",
 				spider.downloaderManager.Middlewares()[idx], err)
 		}
-		eg.signal.Emit(NewDownloaderErrorSignal(SenderProcessRequest, request, err, spider))
+		eg.emit(NewDownloaderErrorSignal(SenderProcessRequest, request, err, spider))
 		return
 	}
 
@@ -401,9 +445,9 @@ func (eg *EnginerImpl) requestReachedDownloaderMiddleware(request *Request, spid
 
 	switch res := result.(type) {
 	case *Request:
-		eg.signal.Emit(NewRequestLeftEngineSignal(SenderProcessRequest, res, spider))
+		eg.emit(NewRequestLeftEngineSignal(SenderProcessRequest, res, spider))
 	case *Response:
-		eg.signal.Emit(NewResponseLeftDownloaderSignal(SenderProcessRequest, request, res, spider))
+		eg.emit(NewResponseLeftDownloaderSignal(SenderProcessRequest, request, res, spider))
 	default:
 		LogSpiderModulerError(
 			logger, zap.FatalLevel,
@@ -429,10 +473,10 @@ func (eg *EnginerImpl) requestReachedDownloader(request *Request, spider *Spider
 			logger, zap.ErrorLevel,
 			"Downloader下载出错",
 			spider.downloader, err)
-		eg.signal.Emit(NewDownloaderErrorSignal(SenderDownloader, request, err, spider))
+		eg.emit(NewDownloaderErrorSignal(SenderDownloader, request, err, spider))
 		return
 	}
-	eg.signal.Emit(NewResponseLeftDownloaderSignal(SenderDownloader, request, response, spider))
+	eg.emit(NewResponseLeftDownloaderSignal(SenderDownloader, request, response, spider))
 }
 
 // 由ProcessResponse处理Response
@@ -449,22 +493,22 @@ func (eg *EnginerImpl) responseLeftDownloader(request *Request, response *Respon
 				logger, zap.InfoLevel,
 				"ProcessRequest方法出错",
 				spider.downloaderManager.Middlewares()[idx], err)
-			eg.signal.Emit(NewRequestDroppedSignal(SenderProcessResponse, request, err, spider))
+			eg.emit(NewRequestDroppedSignal(SenderProcessResponse, request, err, spider))
 		} else {
 			LogSpiderModulerError(
 				logger, zap.ErrorLevel,
 				"ProcessRequest方法出错",
 				spider.downloaderManager.Middlewares()[idx], err)
 		}
-		eg.signal.Emit(NewRequestErrbackSignal(SenderProcessResponse, request, response, err, spider))
+		eg.emit(NewRequestErrbackSignal(SenderProcessResponse, request, response, err, spider))
 		return
 	}
 
 	switch res := result.(type) {
 	case *Request:
-		eg.signal.Emit(NewRequestLeftEngineSignal(SenderProcessResponse, res, spider))
+		eg.emit(NewRequestLeftEngineSignal(SenderProcessResponse, res, spider))
 	case *Response:
-		eg.signal.Emit(NewResponseLeftDownloaderMiddlewareSignal(SenderProcessResponse, res, spider))
+		eg.emit(NewResponseLeftDownloaderMiddlewareSignal(SenderProcessResponse, res, spider))
 	default:
 		LogSpiderModulerError(
 			logger, zap.FatalLevel,
@@ -480,7 +524,7 @@ func (eg *EnginerImpl) responseLeftDownloaderMiddleware(response *Response, spid
 	logger.Debug("开始分发响应到爬虫中间件")
 	defer logger.Debug("结束分发响应爬虫中间件")
 
-	eg.signal.Emit(NewResponseReachedSpiderMiddlewareSignal(SenderEngine, response, spider))
+	eg.emit(NewResponseReachedSpiderMiddlewareSignal(SenderEngine, response, spider))
 }
 
 // 通过ProcessSpiderInput处理Response
@@ -495,10 +539,10 @@ func (eg *EnginerImpl) responseReachedSpiderMiddleware(response *Response, spide
 			logger, zap.ErrorLevel,
 			"ProcessSpiderInput方法出错",
 			spider.spiderManager.Middlewares()[idx], err)
-		eg.signal.Emit(NewRequestErrbackSignal(SenderProcessSpiderInput, response.Request, response, err, spider))
+		eg.emit(NewRequestErrbackSignal(SenderProcessSpiderInput, response.Request, response, err, spider))
 		return
 	}
-	eg.signal.Emit(NewResponseReachedSpiderSignal(SenderProcessSpiderInput, response, spider))
+	eg.emit(NewResponseReachedSpiderSignal(SenderProcessSpiderInput, response, spider))
 }
 
 // 调用Request的解析函数处理Response
@@ -515,7 +559,7 @@ func (eg *EnginerImpl) responseReachedSpider(response *Response, spider *Spider)
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Errorw("解析Response出错", "error", err)
-			eg.signal.Emit(NewSpiderErrorSignal(SenderSpider, response, err.(error), spider))
+			eg.emit(NewSpiderErrorSignal(SenderSpider, response, err.(error), spider))
 		}
 	}()
 
@@ -537,7 +581,7 @@ func (eg *EnginerImpl) responseReachedSpider(response *Response, spider *Spider)
 		logger.Warn("CallbackFunc返回结果为空")
 		return
 	}
-	eg.signal.Emit(NewResultsLeftSpiderSignal(
+	eg.emit(NewResultsLeftSpiderSignal(
 		SenderSpider, response, results, spider.spiderManager.Len()-1, spider))
 }
 
@@ -554,7 +598,7 @@ func (eg *EnginerImpl) resultsLeftSpider(response *Response, results Results, in
 			logger, zap.ErrorLevel,
 			"ProcessSpiderOutput方法出错",
 			spider.spiderManager.Middlewares()[idx], err)
-		eg.signal.Emit(NewSpiderErrorSignal(SenderProcessSpiderOutput, response, err, spider))
+		eg.emit(NewSpiderErrorSignal(SenderProcessSpiderOutput, response, err, spider))
 		return
 	}
 	if resultsProcessed == nil {
@@ -565,28 +609,38 @@ func (eg *EnginerImpl) resultsLeftSpider(response *Response, results Results, in
 			fmt.Errorf("middleware %s returned nil", spider.spiderManager.Middlewares()[idx].Name()))
 	}
 
-	eg.signal.Emit(NewResultsLeftSpiderMiddlewareSignal(SenderProcessSpiderOutput, response, resultsProcessed, spider))
+	eg.emit(NewResultsLeftSpiderMiddlewareSignal(SenderProcessSpiderOutput, response, resultsProcessed, spider))
 }
 
 // 分发从爬虫中间件返回的结果
 func (eg *EnginerImpl) resultsLeftSpiderMiddleware(response *Response, results Results, spider *Spider) {
 	logger := ResponseLogger(eg.Logger, response)
 	logger.Debug("开始分发爬虫解析结果")
-	defer logger.Debug("结束分发爬虫解析结果")
 
-	for result := range results {
-		switch res := result.(type) {
-		case *Request:
-			eg.signal.Emit(NewRequestLeftEngineSignal(SenderProcessSpiderOutput, res, spider))
-		default:
-			item := &ItemResponseSignal{
-				Item:     res,
-				Response: nil,
-				Spider:   spider,
+	go func() {
+		defer logger.Debug("结束分发爬虫解析结果")
+
+		eg.Add(1)
+		eg.wg.Add(1)
+		defer func() {
+			eg.Done()
+			eg.wg.Done()
+		}()
+
+		for result := range results {
+			switch res := result.(type) {
+			case *Request:
+				eg.emit(NewRequestLeftEngineSignal(SenderProcessSpiderOutput, res, spider))
+			default:
+				item := &ItemResponseSignal{
+					Item:     res,
+					Response: response,
+					Spider:   spider,
+				}
+				eg.itemSlot.Push(item)
 			}
-			eg.itemSlot.Push(item)
 		}
-	}
+	}()
 }
 
 // 使用ProcessSpiderError处理爬虫错误
@@ -602,7 +656,7 @@ func (eg *EnginerImpl) spiderError(response *Response, e error, spider *Spider) 
 			logger, zap.ErrorLevel,
 			"ProcessSpiderError方法出错",
 			spider.spiderManager.Middlewares()[idx], err)
-		eg.signal.Emit(NewErrorUnhandledSignal(SenderProcessSpiderError, response.Request, response, err, spider))
+		eg.emit(NewErrorUnhandledSignal(SenderProcessSpiderError, response.Request, response, err, spider))
 		return
 	}
 
@@ -611,12 +665,12 @@ func (eg *EnginerImpl) spiderError(response *Response, e error, spider *Spider) 
 			logger, zap.WarnLevel,
 			"ProcessSpiderError方法无法处理该错误",
 			spider.spiderManager.Middlewares()[idx], e)
-		eg.signal.Emit(NewErrorUnhandledSignal(
+		eg.emit(NewErrorUnhandledSignal(
 			SenderProcessSpiderError, response.Request, response, e, spider))
 		return
 	}
 
-	eg.signal.Emit(NewResultsLeftSpiderSignal(
+	eg.emit(NewResultsLeftSpiderSignal(
 		SenderProcessSpiderError, response, results, idx-1, spider))
 }
 
@@ -632,7 +686,7 @@ func (eg *EnginerImpl) downloaderError(request *Request, e error, spider *Spider
 			logger, zap.ErrorLevel,
 			"ProcessError方法出错",
 			spider.downloaderManager.Middlewares()[idx], err)
-		eg.signal.Emit(NewErrorUnhandledSignal(SenderProcessError, request, nil, err, spider))
+		eg.emit(NewErrorUnhandledSignal(SenderProcessError, request, nil, err, spider))
 		return
 	}
 
@@ -641,20 +695,20 @@ func (eg *EnginerImpl) downloaderError(request *Request, e error, spider *Spider
 			"error", e)
 
 		if sender == SenderProcessRequest {
-			eg.signal.Emit(NewRequestErrbackSignal(SenderProcessError, request, nil, e, spider))
+			eg.emit(NewRequestErrbackSignal(SenderProcessError, request, nil, e, spider))
 			return
 		}
 
-		eg.signal.Emit(NewErrorUnhandledSignal(
+		eg.emit(NewErrorUnhandledSignal(
 			SenderProcessError, request, nil, e, spider))
 		return
 	}
 
 	switch res := result.(type) {
 	case *Request:
-		eg.signal.Emit(NewRequestLeftEngineSignal(SenderProcessError, res, spider))
+		eg.emit(NewRequestLeftEngineSignal(SenderProcessError, res, spider))
 	case *Response:
-		eg.signal.Emit(NewResponseLeftDownloaderSignal(SenderProcessError, request, res, spider))
+		eg.emit(NewResponseLeftDownloaderSignal(SenderProcessError, request, res, spider))
 	default:
 		LogSpiderModulerError(
 			logger, zap.FatalLevel,
@@ -680,7 +734,7 @@ func (eg *EnginerImpl) requestErrback(request *Request, response *Response, e er
 		if err := recover(); err != nil {
 			logger.Errorw("ErrbackFunc方法出错", "error", err)
 			if sender == SenderProcessSpiderInput {
-				eg.signal.Emit(NewSpiderErrorSignal(SenderRequestErrback, response, e, spider))
+				eg.emit(NewSpiderErrorSignal(SenderRequestErrback, response, e, spider))
 			}
 		}
 	}()
@@ -688,7 +742,7 @@ func (eg *EnginerImpl) requestErrback(request *Request, response *Response, e er
 	if request.Errback == "" {
 		logger.Warn("未设置ErrbackFunc名称")
 		if sender == SenderProcessSpiderInput {
-			eg.signal.Emit(NewSpiderErrorSignal(SenderRequestErrback, response, e, spider))
+			eg.emit(NewSpiderErrorSignal(SenderRequestErrback, response, e, spider))
 		}
 		return
 	}
@@ -707,7 +761,7 @@ func (eg *EnginerImpl) requestErrback(request *Request, response *Response, e er
 		return
 	}
 
-	eg.signal.Emit(NewResultsLeftSpiderSignal(
+	eg.emit(NewResultsLeftSpiderSignal(
 		SenderRequestErrback, response, results, spider.spiderManager.Len()-1, spider))
 }
 
@@ -715,7 +769,7 @@ func (eg *EnginerImpl) spiderIdle(spider *Spider) {
 	eg.Logger.Debug("爬虫空闲")
 	defer eg.Logger.Debug("即将关闭爬虫引擎")
 
-	eg.signal.Emit(NewSpiderClosedSignal(SenderEngine, "finished", spider))
+	eg.emit(NewSpiderClosedSignal(SenderEngine, "finished", spider))
 }
 
 func (eg *EnginerImpl) spiderClosed(reason string, spider *Spider) {

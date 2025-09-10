@@ -4,9 +4,9 @@ import (
 	"math/rand/v2"
 	"sync"
 	"time"
-	"xspider/container"
 
 	llq "github.com/emirpasic/gods/queues/linkedlistqueue"
+	"github.com/xue0228/xspider/container"
 )
 
 func init() {
@@ -27,9 +27,10 @@ func (rs *ResponseSlotImpl) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&rs.BaseSpiderModule, spider, rs.Name())
 	rs.mu = sync.RWMutex{}
 	rs.minResponseSize = 1024
-	rs.maxActiveSize = spider.Settings.GetIntWithDefault("DOWNLOAD_MAXSIZE", 1073741824)
+	//rs.maxActiveSize = spider.Settings.GetIntWithDefault("DOWNLOAD_MAXSIZE", 1073741824)
+	rs.maxActiveSize = container.GetWithDefault[int](spider.Settings, "DOWNLOAD_MAXSIZE", 1073741824)
 	rs.activeSize = 0
-	rs.Logger.Info("响应并发控制模块已初始化")
+	rs.Logger.Info("模块初始化完成")
 }
 
 func (rs *ResponseSlotImpl) Name() string {
@@ -75,8 +76,9 @@ func (is *ItemSlotImpl) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&is.BaseSpiderModule, spider, is.Name())
 	is.items = llq.New()
 	is.mu = sync.RWMutex{}
-	is.concurrentItems = spider.Settings.GetIntWithDefault("CONCURRENT_ITEMS", 100)
-	is.Logger.Info("Item并发控制模块已初始化")
+	//is.concurrentItems = spider.Settings.GetIntWithDefault("CONCURRENT_ITEMS", 100)
+	is.concurrentItems = container.GetWithDefault[int](spider.Settings, "CONCURRENT_ITEMS", 100)
+	is.Logger.Info("模块初始化完成")
 }
 
 func (is *ItemSlotImpl) Name() string {
@@ -239,35 +241,42 @@ func (rs *RequestSlotImpl) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&rs.BaseSpiderModule, spider, rs.Name())
 	rs.slots = make(map[string]*requestSlot)
 
-	rs.concurrentRequests = spider.Settings.GetIntWithDefault("CONCURRENT_REQUESTS", 16)
-	rs.maxQueueSize = spider.Settings.GetIntWithDefault("MAX_REQUEST_QUEUE_SIZE_PER_DOMAIN", rs.concurrentRequests)
+	//rs.concurrentRequests = spider.Settings.GetIntWithDefault("CONCURRENT_REQUESTS", 16)
+	//rs.maxQueueSize = spider.Settings.GetIntWithDefault("MAX_REQUEST_QUEUE_SIZE_PER_DOMAIN", rs.concurrentRequests)
+	rs.concurrentRequests = container.GetWithDefault[int](spider.Settings, "CONCURRENT_REQUESTS", 16)
+	rs.maxQueueSize = container.GetWithDefault[int](spider.Settings, "MAX_REQUEST_QUEUE_SIZE_PER_DOMAIN", rs.concurrentRequests)
 	if rs.maxQueueSize <= 0 {
 		rs.maxQueueSize = 16
 	}
-	rs.concurrentRequestPerDomain = spider.Settings.GetIntWithDefault("CONCURRENT_REQUESTS_PER_DOMAIN", 1)
-	rs.downloadDelay = spider.Settings.GetIntWithDefault("DOWNLOAD_DELAY", 1)
-	rs.randomizeDelay = spider.Settings.GetBoolWithDefault("RANDOMIZE_DOWNLOAD_DELAY", true)
+	//rs.concurrentRequestPerDomain = spider.Settings.GetIntWithDefault("CONCURRENT_REQUESTS_PER_DOMAIN", 1)
+	//rs.downloadDelay = spider.Settings.GetIntWithDefault("DOWNLOAD_DELAY", 1)
+	//rs.randomizeDelay = spider.Settings.GetBoolWithDefault("RANDOMIZE_DOWNLOAD_DELAY", true)
+	rs.concurrentRequestPerDomain = container.GetWithDefault[int](spider.Settings, "CONCURRENT_REQUESTS_PER_DOMAIN", 1)
+	rs.downloadDelay = container.GetWithDefault[int](spider.Settings, "DOWNLOAD_DELAY", 1)
+	rs.randomizeDelay = container.GetWithDefault[bool](spider.Settings, "RANDOMIZE_DOWNLOAD_DELAY", true)
+
 	rs.requestSlots = make(map[string]requestSlotConfig)
-	requestSlotsAny := spider.Settings.GetWithDefault("REQUEST_SLOTS", map[string]map[string]any{})
-	requestSlots := make(map[string]map[string]any)
-	switch requestSlotsT := requestSlotsAny.(type) {
-	case container.Dict:
-		requestSlotsT2 := requestSlotsT.Map()
-		for k, v := range requestSlotsT2 {
-			switch v2 := v.(type) {
-			case container.Dict:
-				requestSlots[k] = v2.Map()
-			case map[string]any:
-				requestSlots[k] = v2
-			default:
-				panic("REQUEST_SLOTS参数类型错误")
-			}
-		}
-	case map[string]map[string]any:
-		requestSlots = requestSlotsT
-	default:
-		panic("REQUEST_SLOTS参数类型错误")
-	}
+	requestSlots := container.GetWithDefault(spider.Settings, "REQUEST_SLOTS", map[string]map[string]any{})
+	//requestSlotsAny := spider.Settings.GetWithDefault("REQUEST_SLOTS", map[string]map[string]any{})
+	//requestSlots := make(map[string]map[string]any)
+	//switch requestSlotsT := requestSlotsAny.(type) {
+	//case container.Dict:
+	//	requestSlotsT2 := requestSlotsT.Map()
+	//	for k, v := range requestSlotsT2 {
+	//		switch v2 := v.(type) {
+	//		case container.Dict:
+	//			requestSlots[k] = v2.Map()
+	//		case map[string]any:
+	//			requestSlots[k] = v2
+	//		default:
+	//			panic("REQUEST_SLOTS参数类型错误")
+	//		}
+	//	}
+	//case map[string]map[string]any:
+	//	requestSlots = requestSlotsT
+	//default:
+	//	panic("REQUEST_SLOTS参数类型错误")
+	//}
 	for domain, config := range requestSlots {
 		var (
 			concurrency    = rs.concurrentRequestPerDomain // 默认值
@@ -305,7 +314,7 @@ func (rs *RequestSlotImpl) FromSpider(spider *Spider) {
 			randomizeDelay: randomizeDelay,
 		}
 	}
-	rs.Logger.Info("请求并发控制模块已初始化")
+	rs.Logger.Info("模块初始化完成")
 }
 
 func (rs *RequestSlotImpl) Name() string {

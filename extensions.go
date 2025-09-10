@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/xue0228/xspider/container"
 )
 
 func init() {
@@ -81,7 +83,8 @@ func (ls *LogStatsExtension) Name() string {
 
 func (ls *LogStatsExtension) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&ls.BaseSpiderModule, spider, ls.Name())
-	ls.interval = spider.Settings.GetFloat64WithDefault("LOG_STATS_INTERVAL", 60.0)
+	//ls.interval = spider.Settings.GetFloat64WithDefault("LOG_STATS_INTERVAL", 60.0)
+	ls.interval = container.GetWithDefault[float64](spider.Settings, "LOG_STATS_INTERVAL", 60.0)
 	ls.multiplier = 60.0 / ls.interval
 	ls.quitChan = make(chan struct{})
 }

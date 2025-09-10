@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sort"
 	"sync"
+
+	"github.com/xue0228/xspider/container"
 )
 
 func init() {
@@ -26,13 +28,16 @@ type SignalManagerImpl struct {
 
 func (sm *SignalManagerImpl) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&sm.BaseSpiderModule, spider, sm.Name())
-	sm.verboseStats = spider.Settings.GetBoolWithDefault("SIGNAL_VERBOSE_STATS", false)
+	//sm.verboseStats = spider.Settings.GetBoolWithDefault("SIGNAL_VERBOSE_STATS", false)
+	sm.verboseStats = container.GetWithDefault[bool](spider.Settings, "SIGNAL_VERBOSE_STATS", false)
 	sm.quit = make(chan struct{})
 	sm.signalChan = make(chan Signaler)
 	sm.receivers = make(map[SignalType][]ReceiverConfig)
 	sm.running = false
 	sm.mu = sync.RWMutex{}
 	sm.wg = sync.WaitGroup{}
+
+	sm.Logger.Info("模块初始化完成")
 }
 
 func (sm *SignalManagerImpl) add(signal Signaler) {
@@ -123,17 +128,19 @@ func (sm *SignalManagerImpl) Emit(signal Signaler) {
 		return
 	}
 
-	go func() {
-		sm.wg.Add(1)
-		defer sm.wg.Done()
-		select {
-		case sm.signalChan <- signal:
-			// 信号成功发送到通道
-		case <-sm.quit:
-			// manager 在发送前停止了，丢弃信号
-			return
-		}
-	}()
+	sm.signalChan <- signal
+
+	//go func() {
+	//	sm.wg.Add(1)
+	//	defer sm.wg.Done()
+	//	select {
+	//	case sm.signalChan <- signal:
+	//		// 信号成功发送到通道
+	//	case <-sm.quit:
+	//		// manager 在发送前停止了，丢弃信号
+	//		return
+	//	}
+	//}()
 }
 
 func (sm *SignalManagerImpl) callReceiver(fn reflect.Value, signal Signaler) {

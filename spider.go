@@ -2,8 +2,8 @@ package xspider
 
 import (
 	"fmt"
-	"xspider/container"
 
+	"github.com/xue0228/xspider/container"
 	"go.uber.org/zap"
 )
 
@@ -12,7 +12,7 @@ type Spider struct {
 	Signal           SignalManager
 	Logger           *zap.SugaredLogger
 	Stats            Statser
-	Settings         container.Dict
+	Settings         container.JsonMap
 	Starts           Results
 	DefaultParseFunc string
 
@@ -25,7 +25,7 @@ type Spider struct {
 	engine            Enginer
 }
 
-func NewSpider(settings container.Dict, starts Results, defaultParseFunc string) *Spider {
+func NewSpider(settings container.JsonMap, starts Results, defaultParseFunc string) *Spider {
 	return &Spider{
 		Settings:         settings,
 		Starts:           starts,
@@ -36,13 +36,18 @@ func NewSpider(settings container.Dict, starts Results, defaultParseFunc string)
 // 初始化
 func (s *Spider) init() {
 	// 设置爬虫机器人名称
-	s.Name = s.Settings.GetStringWithDefault("BOT_NAME", "xbot")
+	//s.Name = s.Settings.GetStringWithDefault("BOT_NAME", "xbot")
+	s.Name = container.GetWithDefault[string](s.Settings, "BOT_NAME", "xbot")
 
 	// 初始化日志
-	if logEnabled := s.Settings.GetBoolWithDefault("LOG_ENABLED", true); logEnabled {
-		logFile := s.Settings.GetStringWithDefault("LOG_FILE", fmt.Sprintf("%s_info.log", s.Name))
-		errFile := s.Settings.GetStringWithDefault("LOG_ERR_FILE", fmt.Sprintf("%s_err.log", s.Name))
-		logLevel := s.Settings.GetStringWithDefault("LOG_LEVEL", "debug")
+	//if logEnabled := s.Settings.GetBoolWithDefault("LOG_ENABLED", true); logEnabled {
+	//	logFile := s.Settings.GetStringWithDefault("LOG_FILE", fmt.Sprintf("%s_info.log", s.Name))
+	//	errFile := s.Settings.GetStringWithDefault("LOG_ERR_FILE", fmt.Sprintf("%s_err.log", s.Name))
+	//	logLevel := s.Settings.GetStringWithDefault("LOG_LEVEL", "debug")
+	if logEnabled := container.GetWithDefault[bool](s.Settings, "LOG_ENABLED", true); logEnabled {
+		logFile := container.GetWithDefault[string](s.Settings, "LOG_FILE", fmt.Sprintf("%s_info.log", s.Name))
+		errFile := container.GetWithDefault[string](s.Settings, "LOG_ERR_FILE", fmt.Sprintf("%s_err.log", s.Name))
+		logLevel := container.GetWithDefault[string](s.Settings, "LOG_LEVEL", "debug")
 		level, err := StringToLevel(logLevel)
 		if err != nil {
 			panic(fmt.Sprintf("log level error: %s", err))
@@ -54,43 +59,52 @@ func (s *Spider) init() {
 	s.Logger = s.Logger.With("bot_name", s.Name)
 
 	// 初始化统计收集器
-	statserName := s.Settings.GetStringWithDefault("STATS_STRUCT", "StatserImpl")
+	//statserName := s.Settings.GetStringWithDefault("STATS_STRUCT", "StatserImpl")
+	statserName := container.GetWithDefault[string](s.Settings, "STATS_STRUCT", "StatserImpl")
 	s.Stats = GetAndAssertComponent[Statser](statserName)
 	s.Stats.FromSpider(s)
 
 	// 初始化信号管理器
-	signalManagerName := s.Settings.GetStringWithDefault("SIGNAL_MANAGER_STRUCT", "SignalManagerImpl")
+	//signalManagerName := s.Settings.GetStringWithDefault("SIGNAL_MANAGER_STRUCT", "SignalManagerImpl")
+	signalManagerName := container.GetWithDefault[string](s.Settings, "SIGNAL_MANAGER_STRUCT", "SignalManagerImpl")
 	s.Signal = GetAndAssertComponent[SignalManager](signalManagerName)
 	s.Signal.FromSpider(s)
 
 	// 初始化调度器
-	schedulerName := s.Settings.GetStringWithDefault("SCHEDULER_STRUCT", "SchedulerImpl")
+	//schedulerName := s.Settings.GetStringWithDefault("SCHEDULER_STRUCT", "SchedulerImpl")
+	schedulerName := container.GetWithDefault[string](s.Settings, "SCHEDULER_STRUCT", "SchedulerImpl")
 	s.scheduler = GetAndAssertComponent[Scheduler](schedulerName)
 	s.scheduler.FromSpider(s)
 
 	// 初始化下载器
-	downloaderName := s.Settings.GetStringWithDefault("DOWNLOADER_STRUCT", "DownloaderImpl")
+	//downloaderName := s.Settings.GetStringWithDefault("DOWNLOADER_STRUCT", "DownloaderImpl")
+	downloaderName := container.GetWithDefault[string](s.Settings, "DOWNLOADER_STRUCT", "DownloaderImpl")
 	s.downloader = GetAndAssertComponent[Downloader](downloaderName)
 	s.downloader.FromSpider(s)
 
 	// 初始化中间件
-	spiderManagerName := s.Settings.GetStringWithDefault("SPIDER_MIDDLEWARE_MANAGER_STRUCT", "SpiderMiddlewareManagerImpl")
+	//spiderManagerName := s.Settings.GetStringWithDefault("SPIDER_MIDDLEWARE_MANAGER_STRUCT", "SpiderMiddlewareManagerImpl")
+	spiderManagerName := container.GetWithDefault[string](s.Settings, "SPIDER_MIDDLEWARE_MANAGER_STRUCT", "SpiderMiddlewareManagerImpl")
 	s.spiderManager = GetAndAssertComponent[SpiderMiddlewareManager](spiderManagerName)
 	s.spiderManager.FromSpider(s)
-	downloaderManagerName := s.Settings.GetStringWithDefault("DOWNLOADER_MIDDLEWARE_MANAGER_STRUCT", "DownloaderMiddlewareManagerImpl")
+	//downloaderManagerName := s.Settings.GetStringWithDefault("DOWNLOADER_MIDDLEWARE_MANAGER_STRUCT", "DownloaderMiddlewareManagerImpl")
+	downloaderManagerName := container.GetWithDefault[string](s.Settings, "DOWNLOADER_MIDDLEWARE_MANAGER_STRUCT", "DownloaderMiddlewareManagerImpl")
 	s.downloaderManager = GetAndAssertComponent[DownloaderMiddlewareManager](downloaderManagerName)
 	s.downloaderManager.FromSpider(s)
-	itemManagerName := s.Settings.GetStringWithDefault("ITEM_PIPELINE_MANAGER_STRUCT", "ItemPipelineManagerImpl")
+	//itemManagerName := s.Settings.GetStringWithDefault("ITEM_PIPELINE_MANAGER_STRUCT", "ItemPipelineManagerImpl")
+	itemManagerName := container.GetWithDefault[string](s.Settings, "ITEM_PIPELINE_MANAGER_STRUCT", "ItemPipelineManagerImpl")
 	s.itemManager = GetAndAssertComponent[ItemPipelineManager](itemManagerName)
 	s.itemManager.FromSpider(s)
 
 	// 初始化扩展
-	extensionManagerName := s.Settings.GetStringWithDefault("EXTENSION_MANAGER_STRUCT", "ExtensionManagerImpl")
+	//extensionManagerName := s.Settings.GetStringWithDefault("EXTENSION_MANAGER_STRUCT", "ExtensionManagerImpl")
+	extensionManagerName := container.GetWithDefault[string](s.Settings, "EXTENSION_MANAGER_STRUCT", "ExtensionManagerImpl")
 	s.extensionManager = GetAndAssertComponent[ExtensionManager](extensionManagerName)
 	s.extensionManager.FromSpider(s)
 
 	// 初始化引擎
-	engineName := s.Settings.GetStringWithDefault("ENGINE_STRUCT", "EnginerImpl")
+	//engineName := s.Settings.GetStringWithDefault("ENGINE_STRUCT", "EnginerImpl")
+	engineName := container.GetWithDefault[string](s.Settings, "ENGINE_STRUCT", "EnginerImpl")
 	s.engine = GetAndAssertComponent[Enginer](engineName)
 	s.engine.FromSpider(s)
 }

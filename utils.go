@@ -12,9 +12,9 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"xspider/encoder"
 
 	"github.com/kennygrant/sanitize"
+	"github.com/xue0228/xspider/encoder"
 	"go.uber.org/zap/zapcore"
 )
 

@@ -3,9 +3,9 @@ package xspider
 import (
 	"fmt"
 	"strings"
-	"xspider/container"
 
 	"github.com/emirpasic/gods/sets/hashset"
+	"github.com/xue0228/xspider/container"
 	"go.uber.org/zap"
 )
 
@@ -31,18 +31,29 @@ func (dm *HttpAuthDownloaderMiddleware) Name() string {
 
 func (dm *HttpAuthDownloaderMiddleware) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&dm.BaseSpiderModule, spider, dm.Name())
-	httpUser := spider.Settings.GetStringWithDefault("HTTP_USER", "")
-	httpPass := spider.Settings.GetStringWithDefault("HTTP_PASS", "")
+	//httpUser := spider.Settings.GetStringWithDefault("HTTP_USER", "")
+	//httpPass := spider.Settings.GetStringWithDefault("HTTP_PASS", "")
+	httpUser := container.GetWithDefault[string](spider.Settings, "HTTP_USER", "")
+	httpPass := container.GetWithDefault[string](spider.Settings, "HTTP_PASS", "")
 	if httpUser != "" || httpPass != "" {
 		dm.auth = BasicAuthHeader(httpUser, httpPass, "")
-		domains, ok := spider.Settings.Get("HTTP_AUTH_DOMAINS")
-		if !ok {
+		//domains, ok := spider.Settings.Get("HTTP_AUTH_DOMAINS")
+		//if !ok {
+		//	dm.Logger.Warn("HttpAuthMiddleware必须搭配设置项HttpAuthDomains一起使用，" +
+		//		"否则Request会携带认证信息访问多个域名带来安全问题。目前HttpAuthDomains参数将被设置为第一个Request的域名，" +
+		//		"请尽快配置正确的HttpAuthDomains参数。")
+		//	dm.domainUnset = true
+		//} else {
+		//	dm.domains = domains.([]string)
+		//	dm.domainUnset = false
+		//}
+		if !spider.Settings.Has("HTTP_AUTH_DOMAINS") {
 			dm.Logger.Warn("HttpAuthMiddleware必须搭配设置项HttpAuthDomains一起使用，" +
 				"否则Request会携带认证信息访问多个域名带来安全问题。目前HttpAuthDomains参数将被设置为第一个Request的域名，" +
 				"请尽快配置正确的HttpAuthDomains参数。")
 			dm.domainUnset = true
 		} else {
-			dm.domains = domains.([]string)
+			dm.domains = container.GetWithDefault[[]string](spider.Settings, "HTTP_AUTH_DOMAINS", []string{})
 			dm.domainUnset = false
 		}
 	}
@@ -75,7 +86,8 @@ func (dm *UserAgentDownloaderMiddleware) Name() string {
 
 func (dm *UserAgentDownloaderMiddleware) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&dm.BaseSpiderModule, spider, dm.Name())
-	dm.userAgent = spider.Settings.GetStringWithDefault("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36 Edg/97.0.1072.76")
+	//dm.userAgent = spider.Settings.GetStringWithDefault("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36 Edg/97.0.1072.76")
+	dm.userAgent = container.GetWithDefault[string](spider.Settings, "USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36 Edg/97.0.1072.76")
 }
 
 func (dm *UserAgentDownloaderMiddleware) ProcessRequest(request *Request, spider *Spider) Result {
@@ -96,12 +108,14 @@ func (dm *DownloadTimeoutDownloaderMiddleware) Name() string {
 
 func (dm *DownloadTimeoutDownloaderMiddleware) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&dm.BaseSpiderModule, spider, dm.Name())
-	dm.timeout = spider.Settings.GetIntWithDefault("DOWNLOAD_TIMEOUT", 180)
+	//dm.timeout = spider.Settings.GetIntWithDefault("DOWNLOAD_TIMEOUT", 180)
+	dm.timeout = container.GetWithDefault[int](spider.Settings, "DOWNLOAD_TIMEOUT", 180)
 }
 
 func (dm *DownloadTimeoutDownloaderMiddleware) ProcessRequest(request *Request, spider *Spider) Result {
 	if !request.Ctx.Has("download_timeout") {
-		request.Ctx.Set("download_timeout", dm.timeout)
+		//request.Ctx.Set("download_timeout", dm.timeout)
+		container.Set(request.Ctx, "download_timeout", dm.timeout)
 	}
 	return nil
 }
@@ -117,22 +131,25 @@ func (dm *DefaultHeadersDownloaderMiddleware) Name() string {
 
 func (dm *DefaultHeadersDownloaderMiddleware) FromSpider(spider *Spider) {
 	InitBaseSpiderModule(&dm.BaseSpiderModule, spider, dm.Name())
-	headers := spider.Settings.GetWithDefault("DEFAULT_REQUEST_HEADERS", map[string]string{
+	dm.headers = container.GetWithDefault[map[string]string](spider.Settings, "DEFAULT_REQUEST_HEADERS", map[string]string{
 		"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
 		"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"})
-	switch h := headers.(type) {
-	case container.Dict:
-		m := make(map[string]string, h.Len())
-		h.ForEach(func(key string, value any) any {
-			m[key] = value.(string)
-			return nil
-		})
-		dm.headers = m
-	case map[string]string:
-		dm.headers = h
-	default:
-		panic("DEFAULT_REQUEST_HEADERS参数类型错误")
-	}
+	//headers := spider.Settings.GetWithDefault("DEFAULT_REQUEST_HEADERS", map[string]string{
+	//	"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+	//	"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"})
+	//switch h := headers.(type) {
+	//case container.Dict:
+	//	m := make(map[string]string, h.Len())
+	//	h.ForEach(func(key string, value any) any {
+	//		m[key] = value.(string)
+	//		return nil
+	//	})
+	//	dm.headers = m
+	//case map[string]string:
+	//	dm.headers = h
+	//default:
+	//	panic("DEFAULT_REQUEST_HEADERS参数类型错误")
+	//}
 }
 
 func (dm *DefaultHeadersDownloaderMiddleware) ProcessRequest(request *Request, spider *Spider) Result {
@@ -162,14 +179,33 @@ func (dm *RetryDownloaderMiddleware) FromSpider(spider *Spider) {
 	dm.retryHttpCodes = hashset.New()
 	dm.retryReasons = hashset.New()
 
-	dm.retryEnabled = spider.Settings.GetBoolWithDefault("RETRY_ENABLED", true)
-	dm.maxRetryTimes = spider.Settings.GetIntWithDefault("RETRY_TIMES", 2)
-	dm.priorityAdjust = spider.Settings.GetIntWithDefault("RETRY_PRIORITY_ADJUST", -1)
-	codes := spider.Settings.GetWithDefault("RETRY_HTTP_CODES", []any{500, 502, 503, 504, 522, 524, 408, 429})
-	for _, v := range codes.([]any) {
+	//dm.retryEnabled = spider.Settings.GetBoolWithDefault("RETRY_ENABLED", true)
+	dm.retryEnabled = container.GetWithDefault[bool](spider.Settings, "RETRY_ENABLED", true)
+	//dm.maxRetryTimes = spider.Settings.GetIntWithDefault("RETRY_TIMES", 2)
+	dm.maxRetryTimes = container.GetWithDefault[int](spider.Settings, "RETRY_TIMES", 2)
+	//dm.priorityAdjust = spider.Settings.GetIntWithDefault("RETRY_PRIORITY_ADJUST", -1)
+	dm.priorityAdjust = container.GetWithDefault[int](spider.Settings, "RETRY_PRIORITY_ADJUST", -1)
+	//codes := spider.Settings.GetWithDefault("RETRY_HTTP_CODES", []any{500, 502, 503, 504, 522, 524, 408, 429})
+	codes := container.GetWithDefault[[]int](spider.Settings, "RETRY_HTTP_CODES", []int{500, 502, 503, 504, 522, 524, 408, 429})
+	for _, v := range codes {
 		dm.retryHttpCodes.Add(v)
 	}
-	reasons := spider.Settings.GetWithDefault("RETRY_REASONS", []any{
+	//reasons := spider.Settings.GetWithDefault("RETRY_REASONS", []any{
+	//	"url.Error",
+	//	"Timeout",
+	//	"syscall.Errno",
+	//	"syscall.ECONNREFUSED",
+	//	"syscall.ETIMEDOUT",
+	//	//"net.Error",
+	//	"net.OpError",
+	//	"net.DNSError",
+	//	"os.SyscallError",
+	//	"net.InvalidAddrError",
+	//	"net.UnknownNetworkError",
+	//	"net.AddrError",
+	//	"net.DNSConfigError",
+	//})
+	reasons := container.GetWithDefault[[]string](spider.Settings, "RETRY_REASONS", []string{
 		"url.Error",
 		"Timeout",
 		"syscall.Errno",
@@ -181,16 +217,15 @@ func (dm *RetryDownloaderMiddleware) FromSpider(spider *Spider) {
 		"os.SyscallError",
 		"net.InvalidAddrError",
 		"net.UnknownNetworkError",
-		"net.AddrError",
-		"net.DNSConfigError",
 	})
-	for _, v := range reasons.([]any) {
+	for _, v := range reasons {
 		dm.retryReasons.Add(v)
 	}
 }
 
 func (dm *RetryDownloaderMiddleware) ProcessResponse(request *Request, response *Response, spider *Spider) Result {
-	if request.Ctx.GetBoolWithDefault("dont_retry", false) {
+	//if request.Ctx.GetBoolWithDefault("dont_retry", false) {
+	if container.GetWithDefault[bool](request.Ctx, "dont_retry", false) {
 		return response
 	}
 	if dm.retryHttpCodes.Contains(response.StatusCode) {
@@ -218,8 +253,10 @@ func (dm *RetryDownloaderMiddleware) ProcessError(request *Request, err error, s
 }
 
 func (dm *RetryDownloaderMiddleware) retry(request *Request, reason string) *Request {
-	maxRetryTimes := request.Ctx.GetIntWithDefault("max_retry_times", dm.maxRetryTimes)
-	priorityAdjust := request.Ctx.GetIntWithDefault("priority_adjust", dm.priorityAdjust)
+	//maxRetryTimes := request.Ctx.GetIntWithDefault("max_retry_times", dm.maxRetryTimes)
+	//priorityAdjust := request.Ctx.GetIntWithDefault("priority_adjust", dm.priorityAdjust)
+	maxRetryTimes := container.GetWithDefault[int](request.Ctx, "max_retry_times", dm.maxRetryTimes)
+	priorityAdjust := container.GetWithDefault[int](request.Ctx, "priority_adjust", dm.priorityAdjust)
 	return getRetryRequest(request, reason, maxRetryTimes, priorityAdjust, dm.Logger, dm.Stats, "retry")
 }
 
@@ -232,14 +269,16 @@ func getRetryRequest(
 	stats Statser,
 	statsBaseKey string,
 ) *Request {
-	retryTimes := request.Ctx.GetIntWithDefault("retry_times", 0) + 1
+	//retryTimes := request.Ctx.GetIntWithDefault("retry_times", 0) + 1
+	retryTimes := container.GetWithDefault[int](request.Ctx, "retry_times", 0) + 1
 	if retryTimes <= maxRetryTimes {
 		RequestLogger(logger, request).With(
 			"retry_times", retryTimes,
 			"reason", reason,
 		).Debug("重试Request")
 
-		request.Ctx.Set("retry_times", retryTimes)
+		//request.Ctx.Set("retry_times", retryTimes)
+		container.Set(request.Ctx, "retry_times", retryTimes)
 		request.DontFilter = true
 		request.Priority += priorityAdjust
 
