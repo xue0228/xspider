@@ -6,8 +6,9 @@ import (
 	"io"
 
 	"github.com/xue0228/xspider/container"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type RequestTable struct {
@@ -15,7 +16,7 @@ type RequestTable struct {
 	Url    string
 	Method string `gorm:"default:'GET'"`
 	Body   string `gorm:"default:''"`
-	Fp     string `gorm:"uniqueIndex;not null"`
+	Fp     string `gorm:"size:40;uniqueIndex;not null"`
 	Status uint8  `gorm:"default:0"`
 }
 
@@ -24,8 +25,10 @@ type SqliteRequestTable struct {
 	table string
 }
 
-func NewSqliteRequestTable(file, table string) *SqliteRequestTable {
-	db, err := gorm.Open(sqlite.Open(file), &gorm.Config{})
+func NewSqliteRequestTable(dsn, table string) *SqliteRequestTable {
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Error), // 只输出警告和错误日志
+	})
 	if err != nil {
 		panic(err)
 	}

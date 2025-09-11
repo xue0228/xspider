@@ -41,19 +41,39 @@ type EnginerImpl struct {
 	requestSlot  RequestSloter
 
 	backTask int
+	stopFlag bool
 
 	wg sync.WaitGroup
+	mu sync.RWMutex
+}
+
+func (eg *EnginerImpl) setFlagTrue() {
+	eg.mu.Lock()
+	defer eg.mu.Unlock()
+	eg.stopFlag = true
+}
+
+func (eg *EnginerImpl) needStop() bool {
+	eg.mu.RLock()
+	defer eg.mu.RUnlock()
+	return eg.stopFlag
 }
 
 func (eg *EnginerImpl) Add(num int) {
+	eg.mu.Lock()
+	defer eg.mu.Unlock()
 	eg.backTask += num
 }
 
 func (eg *EnginerImpl) Done() {
+	eg.mu.Lock()
+	defer eg.mu.Unlock()
 	eg.backTask--
 }
 
 func (eg *EnginerImpl) IsAllDone() bool {
+	eg.mu.RLock()
+	defer eg.mu.RUnlock()
 	return eg.backTask <= 0
 }
 
@@ -166,7 +186,7 @@ func (eg *EnginerImpl) processInterrupt(spider *Spider) {
 			if count == 1 {
 				// 第一次接收到信号，停止从scheduler调度新请求
 				eg.Logger.Info("接收到中断信号，正在优雅关闭...", "signal", sig)
-				close(eg.schedulerChan)
+				eg.setFlagTrue()
 			} else {
 				// 第二次接收到信号，强制退出
 				eg.Logger.Info("再次接收到中断信号，强制退出", "signal", sig)
@@ -187,7 +207,7 @@ func (eg *EnginerImpl) processItem(spider *Spider) {
 			if itemSignal == nil {
 				continue
 			}
-			spider.Signal.Emit(NewItemLeftEngineSignal(SenderEngine, itemSignal.Item, itemSignal.Response, spider))
+			eg.emit(NewItemLeftEngineSignal(SenderEngine, itemSignal.Item, itemSignal.Response, spider))
 			if eg.itemSlot.IsFree() && !eg.itemSlot.IsEmpty() {
 				eg.triggerItem()
 			}
@@ -230,9 +250,9 @@ func (eg *EnginerImpl) processScheduler(spider *Spider) {
 			//fmt.Println("1")
 			if (eg.requestSlot.IsFree() || eg.requestSlot.IsEmpty()) &&
 				eg.itemSlot.IsFree() && eg.responseSlot.IsFree() {
-				if spider.scheduler.HasPendingRequests() {
+				if spider.scheduler.HasPendingRequests() && !eg.needStop() {
 					request := spider.scheduler.NextRequest()
-					spider.Signal.Emit(NewRequestLeftSchedulerSignal(SenderScheduler, request, spider))
+					eg.emit(NewRequestLeftSchedulerSignal(SenderScheduler, request, spider))
 					eg.triggerScheduler()
 				}
 			}
@@ -242,7 +262,7 @@ func (eg *EnginerImpl) processScheduler(spider *Spider) {
 			//fmt.Println(eg.itemSlot.IsEmpty())
 			//fmt.Println(spider.Signal.IsAllDone())
 			if eg.isIdle(spider) {
-				spider.Signal.Emit(NewSpiderIdleSignal(SenderEngine, spider))
+				eg.emit(NewSpiderIdleSignal(SenderEngine, spider))
 			} else {
 				eg.triggerScheduler()
 			}
@@ -254,7 +274,7 @@ func (eg *EnginerImpl) processScheduler(spider *Spider) {
 
 // 判断是否全部爬取完成
 func (eg *EnginerImpl) isIdle(spider *Spider) bool {
-	return !spider.scheduler.HasPendingRequests() &&
+	return (!spider.scheduler.HasPendingRequests() || eg.needStop()) &&
 		eg.requestSlot.IsEmpty() &&
 		eg.itemSlot.IsEmpty() &&
 		spider.Signal.IsAllDone() &&
@@ -265,7 +285,16 @@ func (eg *EnginerImpl) isIdle(spider *Spider) bool {
 func (eg *EnginerImpl) triggerScheduler() {
 	go func() {
 		eg.wg.Add(1)
-		defer eg.wg.Done()
+		eg.Add(1)
+		defer func() {
+			eg.wg.Done()
+			eg.Done()
+		}()
+
+		if eg.needStop() {
+			return
+		}
+
 		select {
 		case eg.schedulerChan <- struct{}{}:
 		default:
@@ -276,7 +305,11 @@ func (eg *EnginerImpl) triggerScheduler() {
 func (eg *EnginerImpl) triggerItem() {
 	go func() {
 		eg.wg.Add(1)
-		defer eg.wg.Done()
+		eg.Add(1)
+		defer func() {
+			eg.wg.Done()
+			eg.Done()
+		}()
 		select {
 		case eg.itemChan <- struct{}{}:
 		default:

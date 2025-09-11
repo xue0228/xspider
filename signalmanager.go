@@ -41,14 +41,20 @@ func (sm *SignalManagerImpl) FromSpider(spider *Spider) {
 }
 
 func (sm *SignalManagerImpl) add(signal Signaler) {
-	if sm.verboseStats {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.verboseStats && signal != nil {
 		sm.Stats.IncValue(fmt.Sprintf("signal_manager/%s/add", signal.Type()), 1, 0)
 	}
 	sm.Stats.IncValue("signal_manager/total/add", 1, 0)
 }
 
 func (sm *SignalManagerImpl) done(signal Signaler) {
-	if sm.verboseStats {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.verboseStats && signal != nil {
 		sm.Stats.IncValue(fmt.Sprintf("signal_manager/%s/done", signal.Type()), 1, 0)
 	}
 	sm.Stats.IncValue("signal_manager/total/done", 1, 0)
@@ -274,8 +280,15 @@ func (sm *SignalManagerImpl) run() {
 		case signal := <-sm.signalChan:
 			// 收到信号，进行分发
 			//fmt.Println(signal)
-			sm.dispatch(signal)
-
+			go func() {
+				sm.wg.Add(1)
+				sm.add(nil)
+				defer func() {
+					sm.wg.Done()
+					sm.done(nil)
+				}()
+				sm.dispatch(signal)
+			}()
 		case <-sm.quit:
 			// fmt.Println("停止信号已收到，正在停止信号处理程序...")
 			// 收到停止信号，退出循环
