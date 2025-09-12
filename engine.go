@@ -368,6 +368,9 @@ func (eg *EnginerImpl) startsLeftSpiderMiddleware(results Results, spider *Spide
 		}()
 
 		for result := range results {
+			if eg.needStop() {
+				return
+			}
 			switch start := result.(type) {
 			case *Request:
 				eg.emit(NewRequestLeftEngineSignal(SenderProcessStartRequests, start, spider))

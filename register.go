@@ -111,3 +111,12 @@ func RegisterSpiderModuler(sm SpiderModuler) {
 		panic(err)
 	}
 }
+
+func RegisterStructs(structs ...any) {
+	for _, s := range structs {
+		err := Register(GetStructName(s), s)
+		if err != nil {
+			panic(err)
+		}
+	}
+}

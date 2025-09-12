@@ -16,7 +16,7 @@ type RequestTable struct {
 	Url    string
 	Method string `gorm:"default:'GET'"`
 	Body   string `gorm:"default:''"`
-	Fp     string `gorm:"size:40;uniqueIndex;not null"`
+	Fp     string `gorm:"type:varchar(40);uniqueIndex;not null"`
 	Status uint8  `gorm:"default:0"`
 }
 

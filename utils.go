@@ -23,6 +23,26 @@ func GetFunctionName(i any) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
+// GetStructName 获取结构体的名称
+// 参数v必须是结构体实例或结构体指针
+func GetStructName(v interface{}) string {
+	// 获取反射类型
+	t := reflect.TypeOf(v)
+
+	// 如果是指针类型，获取其指向的元素类型
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// 检查是否为结构体类型
+	if t.Kind() != reflect.Struct {
+		return ""
+	}
+
+	// 返回结构体名称
+	return t.Name()
+}
+
 func Generator(yield func(chan<- any)) <-chan any {
 	ch := make(chan any)
 	go func() {
