@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xue0228/xspider/container"
@@ -19,82 +20,78 @@ func init() {
 
 type BaseGormItemPipeline struct {
 	BaseSpiderModule
-	db *gorm.DB
-	//failMap map[string]map[uint]struct{}
-	//lock    sync.RWMutex
+	db                *gorm.DB
+	failMap           map[string][]uint
+	batchSize         int
+	maxUpdateInterval time.Duration
+	lastClear         time.Time
+	lock              sync.RWMutex
 }
 
-//func (p *BaseGormItemPipeline) setFail(table string, id uint) {
-//	p.lock.Lock()
-//	defer p.lock.Unlock()
-//	if _, ok := p.failMap[table]; !ok {
-//		p.failMap[table] = make(map[uint]struct{})
-//	}
-//	p.failMap[table][id] = struct{}{}
-//}
-//
-//func (p *BaseGormItemPipeline) isFail(table string, id uint) bool {
-//	p.lock.RLock()
-//	defer p.lock.RUnlock()
-//	if _, ok := p.failMap[table]; !ok {
-//		return false
-//	}
-//	_, ok := p.failMap[table][id]
-//	return ok
-//}
-//
-//func (p *BaseGormItemPipeline) removeFail(table string, id uint) {
-//	p.lock.Lock()
-//	defer p.lock.Unlock()
-//	if _, ok := p.failMap[table]; !ok {
-//		return
-//	}
-//	delete(p.failMap[table], id)
-//}
-
-func (p *BaseGormItemPipeline) finishRequest(item Item, response *Response, spider *Spider) {
-	log := ResponseLogger(p.Logger, response)
-	table, err := container.Get[string](response.Ctx, "table")
-	if err != nil {
-		log.Debugw("请求状态更新失败", "error", err, "table", table)
-		return
+func (p *BaseGormItemPipeline) addFail(table string, id uint) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	if _, ok := p.failMap[table]; !ok {
+		p.failMap[table] = []uint{}
 	}
-	id, err := container.Get[uint](response.Ctx, "id")
-	if err != nil {
-		log.Debugw("请求状态更新失败", "error", err, "table", table, "id", id)
-		return
+	p.failMap[table] = append(p.failMap[table], id)
+}
+
+func (p *BaseGormItemPipeline) needClear() bool {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	num := 0
+	for _, ids := range p.failMap {
+		num += len(ids)
+	}
+	if num >= p.batchSize {
+		return true
 	}
 
-	//if !p.isFail(table, id) {
-	//	result := p.db.Table(table).Where("id = ?", id).Update("status", 2)
-	//	if result.Error != nil {
-	//		p.Logger.Error("更新请求状态失败", "error", result.Error, "table", table, "id", id)
-	//	}
-	//	p.removeFail(table, id)
-	//}
+	if time.Since(p.lastClear) >= p.maxUpdateInterval {
+		p.lastClear = time.Now()
+		return true
+	}
+
+	return false
+}
+
+func (p *BaseGormItemPipeline) clearFail() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	for table, ids := range p.failMap {
+		err := p.db.Table(table).Where("id IN (?)", ids).Update("status", 1).Error
+		if err != nil {
+			p.Logger.Error("更新请求状态失败", "error", err, "table", table, "ids", ids)
+		}
+	}
+
+	p.failMap = make(map[string][]uint)
 }
 
 func (p *BaseGormItemPipeline) ProcessItem(item Item, response *Response, spider *Spider) Item {
 	log := ResponseLogger(p.Logger, response)
 
-	//needRecord := true
+	needRecord := true
 
-	//table, err := container.Get[string](response.Ctx, "table")
-	//if err != nil {
-	//	needRecord = false
-	//}
-	//id, err := container.Get[uint](response.Ctx, "id")
-	//if err != nil {
-	//	needRecord = false
-	//}
+	table, err := container.Get[string](response.Ctx, "table")
+	if err != nil {
+		needRecord = false
+	}
+	id, err := container.Get[uint](response.Ctx, "id")
+	if err != nil {
+		needRecord = false
+	}
 
 	// 检查类型并转换为指针（如果需要）
 	itemPtr, err := ensureStructPointer(item)
 	if err != nil {
 		log.Errorw("数据类型错误", "error", err, "type", reflect.TypeOf(item).String())
-		//if needRecord {
-		//	p.setFail(table, id)
-		//}
+		if needRecord {
+			p.addFail(table, id)
+		}
 		return item
 	}
 
@@ -105,17 +102,23 @@ func (p *BaseGormItemPipeline) ProcessItem(item Item, response *Response, spider
 			log.Debugw("数据已存在，跳过保存", "type", GetStructName(item))
 		} else {
 			log.Errorw("保存数据失败", "error", err, "type", GetStructName(item))
-			//if needRecord {
-			//	p.setFail(table, id)
-			//}
+			if needRecord {
+				p.addFail(table, id)
+			}
 			return item
 		}
+	}
+
+	if p.needClear() {
+		p.clearFail()
 	}
 
 	return item
 }
 
 func (p *BaseGormItemPipeline) Close(spider *Spider) {
+	p.clearFail()
+
 	sqlDB, err := p.db.DB()
 	if err != nil {
 		p.Logger.Error("关闭数据库连接失败", "error", err)
@@ -154,10 +157,8 @@ func ensureStructPointer(v any) (any, error) {
 }
 
 func initBaseGormItemPipeline(base *BaseGormItemPipeline, spider *Spider, d gorm.Dialector) {
-	//spider.Signal.Connect(base.finishRequest, StItemDropped, 500)
-	//spider.Signal.Connect(base.finishRequest, StItemScraped, 500)
-
-	//base.failMap = make(map[string]map[uint]struct{})
+	base.failMap = make(map[string][]uint)
+	base.lastClear = time.Now()
 
 	db, err := gorm.Open(d, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Error), // 只输出警告和错误日志
@@ -175,9 +176,9 @@ func initBaseGormItemPipeline(base *BaseGormItemPipeline, spider *Spider, d gorm
 
 	// 3. 连接池核心配置（根据爬虫并发量调整）
 	sqlDB.SetMaxOpenConns(100)                 // 最大活跃连接数：不超过 MySQL 允许的最大连接数（默认 151）
-	sqlDB.SetMaxIdleConns(50)                  // 最大闲置连接数：建议小于等于 MaxOpenConns，避免闲置连接过多
+	sqlDB.SetMaxIdleConns(10)                  // 最大闲置连接数：建议小于等于 MaxOpenConns，避免闲置连接过多
 	sqlDB.SetConnMaxLifetime(30 * time.Minute) // 连接最大存活时间：超过后自动关闭（避免长期占用端口）
-	sqlDB.SetConnMaxIdleTime(10 * time.Minute) // 连接最大闲置时间：闲置超此时长自动关闭（释放端口）
+	sqlDB.SetConnMaxIdleTime(1 * time.Minute)  // 连接最大闲置时间：闲置超此时长自动关闭（释放端口）
 
 	base.db = db
 	structsName, err := container.Get[[]string](spider.Settings, "GORM_STRUCTS")
@@ -194,6 +195,11 @@ func initBaseGormItemPipeline(base *BaseGormItemPipeline, spider *Spider, d gorm
 	if err != nil {
 		base.Logger.Fatalw("自动迁移失败", "error", err)
 	}
+
+	base.batchSize = container.GetWithDefault[int](spider.Settings, "GORM_BATCH_SIZE", 1000)
+	interval := container.GetWithDefault[int](spider.Settings, "GORM_MAX_UPDATE_INTERVAL", 60)
+	base.maxUpdateInterval = time.Duration(interval) * time.Second
+
 	base.Logger.Info("模块初始化完成")
 }
 
