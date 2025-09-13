@@ -104,11 +104,13 @@ func (t *SqliteRequestTable) SetStatus(old, new uint8) error {
 	return nil
 }
 
-func (t *SqliteRequestTable) Generator() Results {
+func (t *SqliteRequestTable) Generator(resetRunning bool) Results {
 	c := make(chan any)
 	go func() {
 		defer close(c)
-		_ = t.SetStatus(1, 0)
+		if resetRunning {
+			_ = t.SetStatus(1, 0)
+		}
 		for {
 			request, err := t.Pop()
 			if err != nil {
